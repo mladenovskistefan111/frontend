@@ -86,7 +86,7 @@ func TestCartSize_MultipleItems(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderMoney_USD(t *testing.T) {
-	m := pb.Money{CurrencyCode: "USD", Units: 10, Nanos: 990000000}
+	m := &pb.Money{CurrencyCode: "USD", Units: 10, Nanos: 990000000}
 	got := renderMoney(m)
 	want := "$10.99"
 	if got != want {
@@ -95,7 +95,7 @@ func TestRenderMoney_USD(t *testing.T) {
 }
 
 func TestRenderMoney_EUR(t *testing.T) {
-	m := pb.Money{CurrencyCode: "EUR", Units: 5, Nanos: 500000000}
+	m := &pb.Money{CurrencyCode: "EUR", Units: 5, Nanos: 500000000}
 	got := renderMoney(m)
 	want := "€5.50"
 	if got != want {
@@ -104,7 +104,7 @@ func TestRenderMoney_EUR(t *testing.T) {
 }
 
 func TestRenderMoney_JPY(t *testing.T) {
-	m := pb.Money{CurrencyCode: "JPY", Units: 1000, Nanos: 0}
+	m := &pb.Money{CurrencyCode: "JPY", Units: 1000, Nanos: 0}
 	got := renderMoney(m)
 	want := "¥1000.00"
 	if got != want {
@@ -113,7 +113,7 @@ func TestRenderMoney_JPY(t *testing.T) {
 }
 
 func TestRenderMoney_GBP(t *testing.T) {
-	m := pb.Money{CurrencyCode: "GBP", Units: 20, Nanos: 0}
+	m := &pb.Money{CurrencyCode: "GBP", Units: 20, Nanos: 0}
 	got := renderMoney(m)
 	want := "£20.00"
 	if got != want {
@@ -122,7 +122,7 @@ func TestRenderMoney_GBP(t *testing.T) {
 }
 
 func TestRenderMoney_TRY(t *testing.T) {
-	m := pb.Money{CurrencyCode: "TRY", Units: 100, Nanos: 0}
+	m := &pb.Money{CurrencyCode: "TRY", Units: 100, Nanos: 0}
 	got := renderMoney(m)
 	want := "₺100.00"
 	if got != want {
@@ -131,7 +131,7 @@ func TestRenderMoney_TRY(t *testing.T) {
 }
 
 func TestRenderMoney_UnknownCurrency(t *testing.T) {
-	m := pb.Money{CurrencyCode: "CHF", Units: 10, Nanos: 0}
+	m := &pb.Money{CurrencyCode: "CHF", Units: 10, Nanos: 0}
 	got := renderMoney(m)
 	want := "$10.00"
 	if got != want {
@@ -140,7 +140,7 @@ func TestRenderMoney_UnknownCurrency(t *testing.T) {
 }
 
 func TestRenderMoney_ZeroValue(t *testing.T) {
-	m := pb.Money{CurrencyCode: "USD", Units: 0, Nanos: 0}
+	m := &pb.Money{CurrencyCode: "USD", Units: 0, Nanos: 0}
 	got := renderMoney(m)
 	want := "$0.00"
 	if got != want {
@@ -164,7 +164,7 @@ func TestRenderCurrencyLogo(t *testing.T) {
 		{"GBP", "£"},
 		{"TRY", "₺"},
 		{"CHF", "$"}, // unknown → default
-		{"",    "$"}, // empty → default
+		{"", "$"},    // empty → default
 	}
 	for _, tt := range tests {
 		got := renderCurrencyLogo(tt.code)

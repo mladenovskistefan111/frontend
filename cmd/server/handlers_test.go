@@ -15,8 +15,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-    os.Setenv("TEMPLATE_PATH", "../../templates/*.html")
-    os.Exit(m.Run())
+	os.Setenv("TEMPLATE_PATH", "../../templates/*.html")
+	os.Exit(m.Run())
 }
 
 // ---------------------------------------------------------------------------

@@ -7,28 +7,12 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // ---------------------------------------------------------------------------
 // metricsMiddleware
 // ---------------------------------------------------------------------------
-
-func newTestRegistry(t *testing.T) (*prometheus.CounterVec, *prometheus.HistogramVec, *prometheus.Gauge) {
-	t.Helper()
-	reqTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "test_http_requests_total",
-	}, []string{"method", "route", "status_code"})
-	reqDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "test_http_request_duration_seconds",
-		Buckets: []float64{0.001, 0.01, 0.1, 1},
-	}, []string{"method", "route", "status_code"})
-	inFlight := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "test_http_requests_in_flight",
-	})
-	return reqTotal, reqDuration, &inFlight
-}
 
 func TestMetricsMiddleware_RecordsSuccessfulRequest(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +64,7 @@ func TestMetricsMiddleware_RecordsPostRequest(t *testing.T) {
 func TestMetricsMiddleware_DefaultStatusIs200(t *testing.T) {
 	// handler writes body but never calls WriteHeader explicitly
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 
 	handler := metricsMiddleware(next, "/")

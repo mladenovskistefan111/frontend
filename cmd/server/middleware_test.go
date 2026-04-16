@@ -208,7 +208,7 @@ func TestLogHandler_RecordsStatusCode(t *testing.T) {
 func TestResponseRecorder_DefaultStatus(t *testing.T) {
 	rr := &responseRecorder{w: httptest.NewRecorder()}
 	// write without setting status — should default to 200
-	rr.Write([]byte("hello"))
+	_, _ = rr.Write([]byte("hello"))
 	if rr.status != http.StatusOK {
 		t.Errorf("expected default status 200, got %d", rr.status)
 	}
@@ -225,7 +225,7 @@ func TestResponseRecorder_ExplicitStatus(t *testing.T) {
 func TestResponseRecorder_ByteCount(t *testing.T) {
 	rr := &responseRecorder{w: httptest.NewRecorder()}
 	body := []byte("hello world")
-	rr.Write(body)
+	_, _ = rr.Write(body)
 	if rr.b != len(body) {
 		t.Errorf("expected %d bytes recorded, got %d", len(body), rr.b)
 	}

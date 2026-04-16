@@ -323,17 +323,17 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 	wg.Wait()
 
 	items := make([]cartItemView, len(cart))
-	totalPrice := pb.Money{CurrencyCode: currentCurrency(r)}
+	totalPrice := &pb.Money{CurrencyCode: currentCurrency(r)}
 	for i, res := range itemResults {
 		if res.err != nil {
 			renderHTTPError(log, r, w, res.err, http.StatusInternalServerError)
 			return
 		}
-		multPrice := money.MultiplySlow(*res.price, uint32(cart[i].GetQuantity()))
-		items[i] = cartItemView{Item: res.product, Quantity: cart[i].GetQuantity(), Price: &multPrice}
+		multPrice := money.MultiplySlow(res.price, uint32(cart[i].GetQuantity()))
+		items[i] = cartItemView{Item: res.product, Quantity: cart[i].GetQuantity(), Price: multPrice}
 		totalPrice = money.Must(money.Sum(totalPrice, multPrice))
 	}
-	totalPrice = money.Must(money.Sum(totalPrice, *shippingCost))
+	totalPrice = money.Must(money.Sum(totalPrice, shippingCost))
 	year := time.Now().Year()
 
 	if err := getTemplates().ExecuteTemplate(w, "cart", injectCommonTemplateData(r, map[string]interface{}{
@@ -426,9 +426,9 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	totalPaid := *order.GetOrder().GetShippingCost()
+	totalPaid := order.GetOrder().GetShippingCost()
 	for _, v := range order.GetOrder().GetItems() {
-		multPrice := money.MultiplySlow(*v.GetCost(), uint32(v.GetItem().GetQuantity()))
+		multPrice := money.MultiplySlow(v.GetCost(), uint32(v.GetItem().GetQuantity()))
 		totalPaid = money.Must(money.Sum(totalPaid, multPrice))
 	}
 
@@ -470,7 +470,7 @@ func (fe *frontendServer) getProductByID(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(jsonData)
+	_, _ = w.Write(jsonData)
 }
 
 func (fe *frontendServer) setCurrencyHandler(w http.ResponseWriter, r *http.Request) {
@@ -567,7 +567,7 @@ func cartSize(c []*pb.CartItem) int {
 	return cartSize
 }
 
-func renderMoney(money pb.Money) string {
+func renderMoney(money *pb.Money) string {
 	currencyLogo := renderCurrencyLogo(money.GetCurrencyCode())
 	return fmt.Sprintf("%s%d.%02d", currencyLogo, money.GetUnits(), money.GetNanos()/10000000)
 }

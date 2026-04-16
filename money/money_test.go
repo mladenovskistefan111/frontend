@@ -8,13 +8,13 @@ import (
 	pb "frontend/genproto"
 )
 
-func mmc(u int64, n int32, c string) pb.Money { return pb.Money{Units: u, Nanos: n, CurrencyCode: c} }
-func mm(u int64, n int32) pb.Money            { return mmc(u, n, "") }
+func mmc(u int64, n int32, c string) *pb.Money { return &pb.Money{Units: u, Nanos: n, CurrencyCode: c} }
+func mm(u int64, n int32) *pb.Money            { return mmc(u, n, "") }
 
 func TestIsValid(t *testing.T) {
 	tests := []struct {
 		name string
-		in   pb.Money
+		in   *pb.Money
 		want bool
 	}{
 		{"valid -/-", mm(-981273891273, -999999999), true},
@@ -38,7 +38,7 @@ func TestIsValid(t *testing.T) {
 func TestIsZero(t *testing.T) {
 	tests := []struct {
 		name string
-		in   pb.Money
+		in   *pb.Money
 		want bool
 	}{
 		{"zero", mm(0, 0), true},
@@ -59,7 +59,7 @@ func TestIsZero(t *testing.T) {
 func TestIsPositive(t *testing.T) {
 	tests := []struct {
 		name string
-		in   pb.Money
+		in   *pb.Money
 		want bool
 	}{
 		{"zero", mm(0, 0), false},
@@ -80,7 +80,7 @@ func TestIsPositive(t *testing.T) {
 func TestIsNegative(t *testing.T) {
 	tests := []struct {
 		name string
-		in   pb.Money
+		in   *pb.Money
 		want bool
 	}{
 		{"zero", mm(0, 0), false},
@@ -100,8 +100,8 @@ func TestIsNegative(t *testing.T) {
 
 func TestAreSameCurrency(t *testing.T) {
 	type args struct {
-		l pb.Money
-		r pb.Money
+		l *pb.Money
+		r *pb.Money
 	}
 	tests := []struct {
 		name string
@@ -125,8 +125,8 @@ func TestAreSameCurrency(t *testing.T) {
 
 func TestAreEquals(t *testing.T) {
 	type args struct {
-		l pb.Money
-		r pb.Money
+		l *pb.Money
+		r *pb.Money
 	}
 	tests := []struct {
 		name string
@@ -151,8 +151,8 @@ func TestAreEquals(t *testing.T) {
 func TestNegate(t *testing.T) {
 	tests := []struct {
 		name string
-		in   pb.Money
-		want pb.Money
+		in   *pb.Money
+		want *pb.Money
 	}{
 		{"zero", mm(0, 0), mm(0, 0)},
 		{"negative", mm(-1, -200), mm(1, 200)},
@@ -187,13 +187,13 @@ func TestMust_panic(t *testing.T) {
 
 func TestSum(t *testing.T) {
 	type args struct {
-		l pb.Money
-		r pb.Money
+		l *pb.Money
+		r *pb.Money
 	}
 	tests := []struct {
 		name    string
 		args    args
-		want    pb.Money
+		want    *pb.Money
 		wantErr error
 	}{
 		{"0+0=0", args{mm(0, 0), mm(0, 0)}, mm(0, 0), nil},

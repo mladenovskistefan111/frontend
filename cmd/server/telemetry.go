@@ -94,7 +94,7 @@ func startMetricsServer(log logrus.FieldLogger) {
 
 // wrapRoutes wraps all named routes in the router with metricsMiddleware.
 func wrapRoutes(r *mux.Router) {
-	r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+	_ = r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 		path, err := route.GetPathTemplate()
 		if err != nil {
 			return nil
