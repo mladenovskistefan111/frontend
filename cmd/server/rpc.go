@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	pb "frontend/genproto"
@@ -87,18 +88,37 @@ func (fe *frontendServer) getRecommendations(ctx context.Context, userID string,
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pb.Product, len(resp.GetProductIds()))
-	for i, v := range resp.GetProductIds() {
-		p, err := fe.getProduct(ctx, v)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get recommended product info (#%s)", v)
+
+	ids := resp.GetProductIds()
+	if len(ids) > 4 {
+		ids = ids[:4] // cap early so we don't fetch more than we'll show
+	}
+
+	type result struct {
+		product *pb.Product
+		err     error
+	}
+
+	results := make([]result, len(ids))
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func(i int, id string) {
+			defer wg.Done()
+			p, err := fe.getProduct(ctx, id)
+			results[i] = result{p, err}
+		}(i, id)
+	}
+	wg.Wait()
+
+	out := make([]*pb.Product, len(ids))
+	for i, r := range results {
+		if r.err != nil {
+			return nil, errors.Wrapf(r.err, "failed to get recommended product info (#%s)", ids[i])
 		}
-		out[i] = p
+		out[i] = r.product
 	}
-	if len(out) > 4 {
-		out = out[:4] // take only first four to fit the UI
-	}
-	return out, err
+	return out, nil
 }
 
 func (fe *frontendServer) getAd(ctx context.Context, ctxKeys []string) ([]*pb.Ad, error) {
