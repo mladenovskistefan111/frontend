@@ -24,7 +24,7 @@ import (
 
 var (
 	frontendMessage = strings.TrimSpace(os.Getenv("FRONTEND_MESSAGE"))
-	isCymbalBrand   = "true" == strings.ToLower(os.Getenv("CYMBAL_BRANDING"))
+	isCymbalBrand   = strings.ToLower(os.Getenv("CYMBAL_BRANDING")) == "true"
 	tmpl            *template.Template
 	tmplOnce        sync.Once
 )

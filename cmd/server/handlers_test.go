@@ -15,7 +15,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Setenv("TEMPLATE_PATH", "../../templates/*.html")
+	if err := os.Setenv("TEMPLATE_PATH", "../../templates/*.html"); err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }
 
