@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"math/rand"
+	"math"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -219,7 +221,11 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve product"), http.StatusInternalServerError)
 		return
 	}
-	if err := fe.insertCart(r.Context(), sessionID(r), p.GetId(), int32(payload.Quantity)); err != nil {
+	if payload.Quantity > math.MaxInt32 {
+		renderHTTPError(log, r, w, errors.New("quantity exceeds maximum allowed value"), http.StatusBadRequest)
+		return
+	}
+	if err := fe.insertCart(r.Context(), sessionID(r), p.GetId(), int32(payload.Quantity)); err != nil { // #nosec G115 -- bounds checked above
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
@@ -329,7 +335,7 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 			renderHTTPError(log, r, w, res.err, http.StatusInternalServerError)
 			return
 		}
-		multPrice := money.MultiplySlow(res.price, uint32(cart[i].GetQuantity()))
+		multPrice := money.MultiplySlow(res.price, uint32(cart[i].GetQuantity())) // #nosec G115 -- quantity is a non-negative proto int32
 		items[i] = cartItemView{Item: res.product, Quantity: cart[i].GetQuantity(), Price: multPrice}
 		totalPrice = money.Must(money.Sum(totalPrice, multPrice))
 	}
@@ -389,9 +395,9 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 			Email: payload.Email,
 			CreditCard: &pb.CreditCardInfo{
 				CreditCardNumber:          payload.CcNumber,
-				CreditCardExpirationMonth: int32(payload.CcMonth),
-				CreditCardExpirationYear:  int32(payload.CcYear),
-				CreditCardCvv:             int32(payload.CcCVV),
+				CreditCardExpirationMonth: int32(payload.CcMonth), // #nosec G115 -- parsed with ParseInt bitSize 32, fits in int32
+				CreditCardExpirationYear:  int32(payload.CcYear),  // #nosec G115 -- parsed with ParseInt bitSize 32, fits in int32
+				CreditCardCvv:             int32(payload.CcCVV),   // #nosec G115 -- parsed with ParseInt bitSize 32, fits in int32
 			},
 			UserId:       sessionID(r),
 			UserCurrency: currentCurrency(r),
@@ -399,7 +405,7 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 				StreetAddress: payload.StreetAddress,
 				City:          payload.City,
 				State:         payload.State,
-				ZipCode:       int32(payload.ZipCode),
+				ZipCode:       int32(payload.ZipCode), // #nosec G115 -- parsed with ParseInt bitSize 32, fits in int32
 				Country:       payload.Country,
 			},
 		})
@@ -428,7 +434,7 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 
 	totalPaid := order.GetOrder().GetShippingCost()
 	for _, v := range order.GetOrder().GetItems() {
-		multPrice := money.MultiplySlow(v.GetCost(), uint32(v.GetItem().GetQuantity()))
+		multPrice := money.MultiplySlow(v.GetCost(), uint32(v.GetItem().GetQuantity())) // #nosec G115 -- quantity is a non-negative proto int32
 		totalPaid = money.Must(money.Sum(totalPaid, multPrice))
 	}
 
@@ -484,9 +490,12 @@ func (fe *frontendServer) setCurrencyHandler(w http.ResponseWriter, r *http.Requ
 	log.WithField("curr.new", payload.Currency).WithField("curr.old", currentCurrency(r)).Debug("setting currency")
 	if payload.Currency != "" {
 		http.SetCookie(w, &http.Cookie{
-			Name:   cookieCurrency,
-			Value:  payload.Currency,
-			MaxAge: cookieMaxAge,
+			Name:     cookieCurrency,
+			Value:    payload.Currency,
+			MaxAge:   cookieMaxAge,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
 		})
 	}
 	referer := r.Header.Get("referer")
@@ -503,7 +512,12 @@ func (fe *frontendServer) chooseAd(ctx context.Context, ctxKeys []string, log lo
 		log.WithField("error", err).Warn("failed to retrieve ads")
 		return nil
 	}
-	return ads[rand.Intn(len(ads))]
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(ads))))
+	if err != nil {
+		log.WithField("error", err).Warn("failed to generate random ad index")
+		return ads[0]
+	}
+	return ads[n.Int64()]
 }
 
 func renderHTTPError(log logrus.FieldLogger, r *http.Request, w http.ResponseWriter, err error, code int) {

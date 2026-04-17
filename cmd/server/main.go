@@ -149,7 +149,14 @@ func main() {
 	addr := os.Getenv("LISTEN_ADDR")
 
 	log.Infof("starting server on %s:%s", addr, srvPort)
-	log.Fatal(http.ListenAndServe(addr+":"+srvPort, handler))
+	srv := &http.Server{
+		Addr:         addr + ":" + srvPort,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func mustMapEnv(target *string, envKey string) {

@@ -81,9 +81,12 @@ func ensureSessionID(next http.Handler) http.HandlerFunc {
 				sessionID = u.String()
 			}
 			http.SetCookie(w, &http.Cookie{
-				Name:   cookieSessionID,
-				Value:  sessionID,
-				MaxAge: cookieMaxAge,
+				Name:     cookieSessionID,
+				Value:    sessionID,
+				MaxAge:   cookieMaxAge,
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteStrictMode,
 			})
 		} else if err != nil {
 			return

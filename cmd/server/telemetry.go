@@ -86,7 +86,13 @@ func startMetricsServer(log logrus.FieldLogger) {
 	mux.Handle("/metrics", promhttp.Handler())
 	log.Infof("Prometheus metrics server listening on :%s/metrics", metricsPort)
 	go func() {
-		if err := http.ListenAndServe(":"+metricsPort, mux); err != nil {
+		srv := &http.Server{
+			Addr:         ":" + metricsPort,
+			Handler:      mux,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		if err := srv.ListenAndServe(); err != nil {
 			log.Warnf("metrics server error: %v", err)
 		}
 	}()
