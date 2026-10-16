@@ -17,7 +17,7 @@ COPY . .
 RUN go build -ldflags="-s -w" -o /bin/frontend ./cmd/server
 
 # ---- Runtime stage ----
-FROM alpine:3.20 AS runtime
+FROM alpine:3.24 AS runtime
 
 RUN apk add --no-cache ca-certificates \
     && addgroup -S appgroup && adduser -S appuser -G appgroup
