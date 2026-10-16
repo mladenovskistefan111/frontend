@@ -1,75 +1,200 @@
 # frontend
 
-The HTTP frontend for the platform-demo e-commerce platform. It serves the web UI, orchestrates calls to all downstream gRPC microservices, and renders HTML templates. Part of a broader microservices platform built with full observability, GitOps, and internal developer platform tooling.
+The HTTP web storefront for the platform-demo e-commerce platform. It serves server-rendered HTML pages and static assets, keeps a session cookie per visitor, and fans out to seven backend gRPC services to build every page. It is the **only** component users (and ingress) talk to directly; everything else is internal.
 
-## Overview
+Part of the [platform-demo](https://github.com/mladenovskistefan111) platform — microservices, observability (LGTM stack), GitOps (Argo CD), policy enforcement (Kyverno), infrastructure provisioning (Crossplane) and an internal developer portal (Backstage). See the master `README.md` in the platform-demo root for the whole-system view.
 
-The frontend is an HTTP server that exposes the following routes:
+## At a glance
+
+| | |
+|---|---|
+| **Language / runtime** | Go 1.25 (`gorilla/mux`, `html/template`), static binary |
+| **Image** | `mladenovskistefan/frontend` |
+| **Protocol / port** | HTTP/1.1 on `8080` |
+| **Metrics** | Pushed over OTLP/gRPC (Prometheus registry bridged into OpenTelemetry); `/metrics` on `9464` is still served for debugging |
+| **Health** | `GET /_healthz` → `200 ok` — static, no dependency checks |
+| **State** | None server-side; session id lives in a browser cookie, carts live in `cart-service` |
+| **Depends on (gRPC)** | `product-catalog-service`, `currency-service`, `cart-service`, `recommendation-service`, `checkout-service`, `shipping-service`, `ad-service` |
+| **Called by** | Browsers / ingress / load generators |
+| **Not used** | `payment-service` and `email-service` are only reached via `checkout-service`. `shopping-assistant-service` is **not** wired in |
+
+## HTTP routes
+
+All routes are prefixed with `BASE_URL` (empty by default).
 
 | Route | Method | Description |
 |---|---|---|
-| `/` | GET | Home page — product listing |
-| `/product/{id}` | GET | Product detail page |
-| `/cart` | GET | View cart |
-| `/cart` | POST | Add item to cart |
-| `/cart/empty` | POST | Empty cart |
-| `/cart/checkout` | POST | Place order |
-| `/setCurrency` | POST | Change display currency |
-| `/logout` | GET | Clear session cookies |
-| `/product-meta/{ids}` | GET | Product metadata (JSON) |
-| `/static/` | GET | Static assets |
-| `/_healthz` | GET | Health check |
+| `/` | GET, HEAD | Home — product grid, currency picker, ad, cart size |
+| `/product/{id}` | GET, HEAD | Product page — product, price, recommendations, ad |
+| `/cart` | GET, HEAD | View cart — items, shipping estimate, total, recommendations |
+| `/cart` | POST | Add item (form fields `product_id`, `quantity`) |
+| `/cart/empty` | POST | Empty the cart |
+| `/cart/checkout` | POST | Validate the form, call `checkout-service.PlaceOrder`, render the order page |
+| `/setCurrency` | POST | Set the display currency cookie (`currency_code`) |
+| `/logout` | GET | Expire all cookies and redirect to `/` |
+| `/product-meta/{ids}` | GET | JSON of a single product (used by the page scripts) |
+| `/static/*` | GET | CSS, icons, product images (`static/img/products/*.jpg`) |
+| `/_healthz` | GET | Liveness/readiness (`ok`) |
+| `/robots.txt` | GET | `Disallow: /` |
 
-**Port:** `8080` (HTTP)  
-**Metrics Port:** `9464` (Prometheus)  
-**Protocol:** HTTP  
-**Language:** Go  
-**Called by:** User (browser) / loadgenerator
+**Supported currencies** (whitelist in code, intersected with what `currency-service` offers): `USD`, `EUR`, `CAD`, `JPY`, `GBP`, `TRY`. Default is `USD`.
 
-## Requirements
+### Which backend each page calls
 
-- Go 1.21+
-- Docker
-- All downstream services running (see dependencies below)
+| Page | Calls |
+|---|---|
+| Home | currency (list + convert per product), product-catalog (list), cart (get), ad (100 ms deadline, failures ignored) |
+| Product | product-catalog (get), currency, cart, recommendation → product-catalog (up to 4), ad |
+| Cart | cart (get), shipping (quote with nil address), currency, product-catalog, recommendation |
+| Checkout | checkout (PlaceOrder), then recommendation + currency for the confirmation page |
 
-## Environment Variables
+### Sessions & cookies
 
-| Variable | Required | Description |
+| Cookie | Purpose | Flags |
 |---|---|---|
-| `PRODUCT_CATALOG_SERVICE_ADDR` | Yes | e.g. `product-catalog-service:3550` |
-| `CURRENCY_SERVICE_ADDR` | Yes | e.g. `currency-service:7000` |
-| `CART_SERVICE_ADDR` | Yes | e.g. `cart-service:7070` |
-| `RECOMMENDATION_SERVICE_ADDR` | Yes | e.g. `recommendation-service:8080` |
-| `CHECKOUT_SERVICE_ADDR` | Yes | e.g. `checkout-service:5050` |
-| `SHIPPING_SERVICE_ADDR` | Yes | e.g. `shipping-service:50051` |
-| `AD_SERVICE_ADDR` | Yes | e.g. `ad-service:9555` |
-| `PORT` | No | HTTP server port (default: `8080`) |
-| `METRICS_PORT` | No | Prometheus metrics port (default: `9464`) |
-| `ENABLE_TRACING` | No | Set to `1` to enable OTel tracing |
-| `COLLECTOR_SERVICE_ADDR` | No | OTLP gRPC collector e.g. `alloy:4317` (required if tracing enabled) |
-| `ENABLE_PROFILING` | No | Set to `1` to enable Pyroscope profiling |
-| `PYROSCOPE_ADDR` | No | Pyroscope endpoint (default: `http://pyroscope:4040`) |
-| `OTEL_SERVICE_NAME` | No | Service name reported to OTel (default: `frontend`) |
-| `BASE_URL` | No | URL prefix if running behind a path-based proxy |
-| `ENV_PLATFORM` | No | Platform label: `local`, `gcp`, `aws`, `azure`, `onprem`, `alibaba` |
-| `CYMBAL_BRANDING` | No | Set to `true` to switch to Cymbal branding |
-| `FRONTEND_MESSAGE` | No | Banner message shown on all pages |
+| `shop_session-id` | random UUID per visitor; used as the cart `user_id` | `HttpOnly`, **`Secure`**, `SameSite=Strict`, 48 h |
+| `shop_currency` | chosen display currency | `HttpOnly`, **`Secure`**, `SameSite=Strict`, 48 h |
 
-## Running Locally
+> **Kubernetes gotcha — cookies are `Secure`.** Browsers only store `Secure` cookies over HTTPS (or `http://localhost`). If you reach the frontend over plain HTTP at a LoadBalancer/NodePort IP or hostname, the session cookie is dropped, every request becomes a new session, and the cart appears to be empty after "Add to cart". Use `kubectl port-forward` (→ `localhost`), or terminate TLS at the ingress/gateway, or set `ENABLE_SINGLE_SHARED_SESSION=true` as a demo workaround (see below).
 
-### 1. Build and run
+## Configuration
 
-```bash
-go build -o frontend .
-./frontend
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PRODUCT_CATALOG_SERVICE_ADDR` | **Yes** | — | `host:port` of product-catalog (gRPC), e.g. `product-catalog-service:3550` |
+| `CURRENCY_SERVICE_ADDR` | **Yes** | — | e.g. `currency-service:7000` |
+| `CART_SERVICE_ADDR` | **Yes** | — | e.g. `cart-service:7070` |
+| `RECOMMENDATION_SERVICE_ADDR` | **Yes** | — | e.g. `recommendation-service:8080` |
+| `CHECKOUT_SERVICE_ADDR` | **Yes** | — | e.g. `checkout-service:5050` |
+| `SHIPPING_SERVICE_ADDR` | **Yes** | — | e.g. `shipping-service:50051` |
+| `AD_SERVICE_ADDR` | **Yes** | — | e.g. `ad-service:9555` |
+| `PORT` | No | `8080` | HTTP listen port |
+| `LISTEN_ADDR` | No | `` (all interfaces) | Bind address; leave empty in containers |
+| `METRICS_PORT` | No | `9464` | Prometheus listener port |
+| `BASE_URL` | No | `` | URL path prefix when served under a sub-path (e.g. `/shop`); all routes and static URLs move under it |
+| `FRONTEND_MESSAGE` | No | — | Banner text shown on pages |
+| `BANNER_COLOR` | No | — | Banner colour passed to the home template |
+| `CYMBAL_BRANDING` | No | `false` | `true` switches to the Cymbal Shops branding |
+| `ENABLE_SINGLE_SHARED_SESSION` | No | `false` | `true` makes every new visitor share one hard-coded session id (cart shared by everyone). Demo/test workaround only |
+| `TEMPLATE_PATH` | No | `templates/*.html` | Glob of HTML templates (relative to `/app`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset (telemetry off) | OTLP/**gRPC** endpoint for **traces, metrics and logs** (scheme required), e.g. `http://alloy.monitoring.svc.cluster.local:4317`. Legacy fallback: `COLLECTOR_SERVICE_ADDR` (`host:port`). Telemetry is on iff an endpoint is set |
+| `ENABLE_TRACING` | No | — | Legacy switch: `0` forces all telemetry off even if an endpoint is set (it is no longer needed to turn telemetry on) |
+| `OTEL_METRIC_EXPORT_INTERVAL` | No | `15000` | Milliseconds between metric pushes (Go also accepts durations such as `15s`) |
+| `OTEL_SERVICE_NAME` | No | `frontend` | `service.name` — becomes the Prometheus `job` and the Loki `service_name`; keep the default, dashboards depend on it |
+| `PYROSCOPE_ADDR` | No | `http://pyroscope:4040` | Profiles use the Pyroscope SDK push protocol (**not** OTLP). Point it at Alloy (`http://alloy.monitoring.svc.cluster.local:4040`), which forwards to Pyroscope, or directly at Pyroscope |
+| `ENABLE_PROFILING` | No | off | `1` starts the Pyroscope SDK |
+
+Notes:
+
+- All seven `*_ADDR` variables are **mandatory**: a missing one makes the process `panic` at startup. They are plain `host:port` (no scheme). Use FQDNs (`svc.<namespace>.svc.cluster.local:<port>`) if services live in other namespaces.
+- gRPC connections use `grpc.NewClient` (lazy): the pod starts and `/_healthz` returns `ok` even if every backend is down. Page loads then fail with HTTP 500 until backends return.
+- The earlier README listed `ENV_PLATFORM`; it is **not read by the code**.
+- Log level is hard-coded to `debug` (JSON via `logrus`) — expect chatty logs; there is no env switch.
+- Telemetry is **pushed**, not scraped: traces, metrics and logs share one OTLP/gRPC endpoint (Alloy); profiles go to Pyroscope (via Alloy). `service.instance.id` is the pod hostname, so replicas stay distinct in Mimir.
+- A Prometheus `/metrics` endpoint is still served on `METRICS_PORT` for debugging, but nothing has to scrape it — the same registry is bridged into OTLP, so metric names are unchanged.
+- Logs: the `logrus` logger keeps writing JSON to stdout and additionally mirrors every record over OTLP (with trace ids when a context is attached).
+
+## Container image
+
+Multi-stage [`Dockerfile`](Dockerfile):
+
+| Stage | Base | What happens |
+|---|---|---|
+| builder | `golang:1.25-alpine` | `go mod download`, `go build -ldflags="-s -w" -o /bin/frontend ./cmd/server` (`CGO_ENABLED=0`; target arch = builder's arch) |
+| runtime | `alpine:3.20` | binary + `templates/` + `static/` under `/app`; adds `ca-certificates` |
+
+- **Entrypoint:** `./frontend` (working dir `/app` — templates and static files are loaded by relative path, so don't change the working dir).
+- **User:** `appuser` — UID `100`, GID `101` (verified). Set `runAsUser: 100` for `runAsNonRoot`.
+- **EXPOSE:** `8080`.
+- **Docker `HEALTHCHECK`:** `wget -qO- http://localhost:${PORT:-8080}/_healthz`. Alpine's busybox `wget` is in the image, so an exec probe is possible, but `httpGet` is simpler.
+- **Image size:** ~15 MB.
+- The repo root may contain a compiled `server` binary (git-ignored) — it is not used by the image.
+
+## Kubernetes deployment notes
+
+**Workload:** stateless `Deployment`; scale freely (sessions are in a cookie, carts in `cart-service`; no sticky sessions required). This is the one workload that needs external exposure.
+
+**Ports to declare**
+
+| Name | Port | Protocol | Expose via Service? |
+|---|---|---|---|
+| `http` | `8080` | TCP (HTTP/1.1) | Yes — Service port `80` → `8080`; front it with an Ingress / Gateway / LoadBalancer |
+| `metrics` | `9464` | TCP (HTTP/1.1) | Optional (debugging/pprof). Not scraped by default — metrics are pushed over OTLP |
+
+**Exposure:** serve over **HTTPS** (see cookie gotcha). Ingress `Service` target is `frontend:80` → pod `8080`. If you use a sub-path ingress, also set `BASE_URL` to match. Set the NetworkPolicy so that only the ingress controller can reach `8080`.
+
+**Probes**
+
+```yaml
+startupProbe:
+  httpGet: { path: /_healthz, port: 8080 }
+  periodSeconds: 2
+  failureThreshold: 15
+readinessProbe:
+  httpGet: { path: /_healthz, port: 8080 }
+  periodSeconds: 5
+livenessProbe:
+  httpGet: { path: /_healthz, port: 8080 }
+  periodSeconds: 10
+  failureThreshold: 3
 ```
 
-### 2. Run with Docker
+Health is static, so readiness doesn't reflect backend health. Pod startup is near-instant.
+
+**Security context**
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 100
+  runAsGroup: 101
+  readOnlyRootFilesystem: true       # nothing is written at runtime
+  allowPrivilegeEscalation: false
+  capabilities: { drop: ["ALL"] }
+```
+
+**Resources** — requests sized from measured idle usage in the test stack (see the chart's `values.yaml` for limits):
+
+```yaml
+resources:
+  requests: { cpu: 100m, memory: 48Mi }
+  limits:   { cpu: "500m", memory: 192Mi }
+```
+
+**Config / secrets:** no secrets. Service addresses, observability endpoints and branding vars belong in values → env.
+
+**Telemetry:** pushed, not scraped — OTLP/gRPC to Alloy (`global.monitoring.otlpEndpoint`), profiles to Alloy `:4040`. Metrics carry `job="frontend"` and `instance=<pod>`; no scrape annotations or `ServiceMonitor` are needed.
+
+**Helm chart:** [`platform-demo-helm/frontend`](../platform-demo-helm/frontend) (built on the shared `platform-common` library chart). It ships with HA defaults — 2 replicas,
+HPA, PodDisruptionBudget, topology spread, NetworkPolicy, restricted pod security context, probes and the full env contract (see Configuration) —
+and was verified on a 3-node kind cluster under the `restricted` Pod Security Standard.
+
+## Observability
+
+| Signal | Implementation | Destination |
+|---|---|---|
+| **Traces** | OpenTelemetry: `otelhttp` on the HTTP handler (inbound), `otelgrpc` client handler on every backend connection (outbound), OTLP/gRPC exporter, `AlwaysSample`, W3C TraceContext + Baggage. The trace starts here and propagates through every downstream service | Alloy `:4317` → Tempo |
+| **Metrics** | `prometheus/client_golang` registry — `http_requests_total`, `http_request_duration_seconds` (buckets 1 ms … 10 s), `http_requests_in_flight`, labelled `method`, `route`, `status_code`, plus Go runtime/process collectors — bridged into OpenTelemetry and pushed over OTLP/gRPC every 15 s. `/metrics` is still served on `METRICS_PORT` for debugging | Alloy → Mimir |
+| **Logs** | `logrus` JSON to stdout at `debug` level **and** an OTLP/gRPC hook (`otellogrus`): request path/method/id/session, response status/bytes/duration | Alloy → Loki |
+| **Profiles** | Pyroscope Go SDK (CPU, alloc/inuse objects & space) when enabled | Alloy `:4040` → Pyroscope |
+
+Every series carries `job="frontend"` (from `service.name`) and `instance=<pod name>` (`service.instance.id`), which is what the Grafana dashboards select on. Logs land in Loki with `service_name="frontend"` and trace/span ids, so a log line links to its trace.
+
+## Running locally
+
+Requirements: Go 1.25+, Docker, and the seven backend services reachable (the quickest way is `platform-demo-observability/docker-compose.yaml`).
 
 ```bash
-docker build -t frontend .
+# from source (note: entrypoint is ./cmd/server)
+export PRODUCT_CATALOG_SERVICE_ADDR=localhost:3550 CURRENCY_SERVICE_ADDR=localhost:7000 \
+       CART_SERVICE_ADDR=localhost:7070 RECOMMENDATION_SERVICE_ADDR=localhost:8081 \
+       CHECKOUT_SERVICE_ADDR=localhost:5050 SHIPPING_SERVICE_ADDR=localhost:50051 \
+       AD_SERVICE_ADDR=localhost:9555
+go run ./cmd/server          # http://localhost:8080
 
-docker run -p 8080:8080 -p 9464:9464 \
+# via Docker
+docker build -t frontend .
+docker run --rm -p 8080:8080 -p 9464:9464 \
   -e PRODUCT_CATALOG_SERVICE_ADDR=product-catalog-service:3550 \
   -e CURRENCY_SERVICE_ADDR=currency-service:7000 \
   -e CART_SERVICE_ADDR=cart-service:7070 \
@@ -77,38 +202,39 @@ docker run -p 8080:8080 -p 9464:9464 \
   -e CHECKOUT_SERVICE_ADDR=checkout-service:5050 \
   -e SHIPPING_SERVICE_ADDR=shipping-service:50051 \
   -e AD_SERVICE_ADDR=ad-service:9555 \
-  -e ENABLE_TRACING=1 \
-  -e COLLECTOR_SERVICE_ADDR=alloy:4317 \
-  -e ENABLE_PROFILING=1 \
-  -e PYROSCOPE_ADDR=http://pyroscope:4040 \
   frontend
+
+go test ./...
+
+curl -s localhost:8080/_healthz            # ok
+curl -s localhost:9464/metrics | grep http_requests_total
 ```
 
-## Project Structure
+Browsing to `http://localhost:8080` works with the `Secure` cookies because browsers treat `localhost` as a secure context.
+
+## Project structure
 
 ```
-├── main.go               # Entrypoint — server bootstrap, routing
-├── telemetry.go          # Prometheus metrics, OTel tracing, Pyroscope profiling
-├── handlers.go           # HTTP route handlers
-├── rpc.go                # gRPC client calls to downstream services
-├── middleware.go         # Logging middleware, session ID middleware
-├── genproto/             # Generated gRPC stubs (demo.pb.go, demo_grpc.pb.go)
-├── money/                # Currency arithmetic helpers
-├── validator/            # Request payload validation
-├── templates/            # HTML templates (home, product, cart, order, error)
-├── static/               # CSS, icons, images
-├── go.mod
-├── go.sum
-└── Dockerfile
+├── cmd/server/
+│   ├── main.go          # entrypoint: env wiring, gRPC dials, router, middleware chain, HTTP server
+│   ├── handlers.go      # page handlers (home, product, cart, checkout, currency, logout, product-meta)
+│   ├── rpc.go           # gRPC client helpers for each backend
+│   ├── middleware.go    # request logging + session-id cookie
+│   └── telemetry.go     # Prometheus HTTP metrics, OTel tracing, Pyroscope
+├── internal/validator/  # form payload validation (go-playground/validator)
+├── money/               # Money arithmetic helpers
+├── genproto/            # generated gRPC stubs for all backend services (demo.pb.go, demo_grpc.pb.go)
+├── templates/           # home, product, cart, order, error, header/footer, ad, recommendations, assistant
+├── static/              # styles, icons, images, product photos
+├── Dockerfile
+├── go.mod / go.sum / .golangci.yaml
+└── tests/ ci/ .github/  # (not covered here)
 ```
 
-## Observability
+## Known limitations
 
-- **Traces** — OTLP gRPC → Alloy → Tempo. Both inbound HTTP spans (`otelhttp`) and outbound gRPC client spans (`otelgrpc`) are instrumented automatically.
-- **Metrics** — Prometheus endpoint on `:9464/metrics`, scraped by Alloy → Mimir. Exposes `http_requests_total`, `http_request_duration_seconds`, and `http_requests_in_flight` labelled by method, route, and status code.
-- **Logs** — Structured JSON logs via `logrus` to stdout, collected by Alloy via Docker socket → Loki. Every request logs path, method, request ID, session ID, response status, and duration.
-- **Profiles** — Continuous CPU and allocation profiling via Pyroscope Go SDK → Pyroscope. Enabled via `ENABLE_PROFILING=1`.
-
-## Part Of
-
-This service is part of [platform-demo](https://github.com/mladenovskistefan111) — a full platform engineering project featuring microservices, observability (LGTM stack), GitOps (Argo CD), policy enforcement (Kyverno), infrastructure provisioning (Crossplane), and an internal developer portal (Backstage).
+- `Secure` + `SameSite=Strict` cookies break carts over plain HTTP outside `localhost`.
+- Health is static; readiness doesn't reflect backend availability.
+- Debug-level JSON logging is unconditional.
+- `templates/assistant.html` and the header's assistant link exist, but nothing sets the `assistant_enabled` flag and no assistant routes are registered — the AI shopping assistant is dormant.
+- Per-request gRPC calls have no retries; the ad call has a 100 ms deadline, the rest use the request context.

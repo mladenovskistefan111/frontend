@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"strconv"
@@ -12,14 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // ---------------------------------------------------------------------------
@@ -111,58 +102,6 @@ func wrapRoutes(r *mux.Router) {
 		}
 		return nil
 	})
-}
-
-// ---------------------------------------------------------------------------
-// OpenTelemetry tracing
-// ---------------------------------------------------------------------------
-
-func initTracing(log logrus.FieldLogger, ctx context.Context) (*sdktrace.TracerProvider, error) {
-	collectorAddr := os.Getenv("COLLECTOR_SERVICE_ADDR")
-	if collectorAddr == "" {
-		return nil, nil
-	}
-
-	conn, err := grpc.NewClient(
-		collectorAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
-	if err != nil {
-		return nil, err
-	}
-
-	serviceName := os.Getenv("OTEL_SERVICE_NAME")
-	if serviceName == "" {
-		serviceName = "frontend"
-	}
-
-	res, err := resource.New(ctx,
-		resource.WithAttributes(semconv.ServiceNameKey.String(serviceName)),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithResource(res),
-	)
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-		),
-	)
-
-	log.Info("OTel tracing initialised")
-	return tp, nil
 }
 
 // ---------------------------------------------------------------------------
