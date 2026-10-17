@@ -229,7 +229,7 @@ Browsing to `http://localhost:8080` works with the `Secure` cookies because brow
 ├── templates/           # home, product, cart, order, error, header/footer, ad, recommendations, assistant
 ├── static/              # styles, icons, images, product photos
 ├── tests/e2e/           # HTTP end-to-end tests (not run by CI; the kind-based job was removed)
-├── .github/workflows/   # ci-feature.yaml, ci-main.yaml (manual dispatch)
+├── .github/workflows/   # ci.yaml (pull requests), release.yaml (v* tags / manual) - callers of platform-demo-workflows
 ├── Dockerfile
 └── go.mod / go.sum / .golangci.yaml
 ```
