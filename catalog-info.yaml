@@ -12,6 +12,7 @@ metadata:
     backstage.io/kubernetes-label-selector: app.kubernetes.io/name=frontend
     argocd/app-name: dev-frontend
     grafana/dashboard-selector: "tags @> 'frontend'"
+    grafana/alert-label-selector: "service=frontend"
     grafana/overview-dashboard: "https://grafana.platform-demo.test/d/frontend-overview"
   tags: [go, http]
   links:
