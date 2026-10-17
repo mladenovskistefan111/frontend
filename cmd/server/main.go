@@ -83,13 +83,17 @@ func main() {
 	initMetrics()
 	startMetricsServer(log)
 
-	if os.Getenv("ENABLE_TRACING") == "1" {
-		log.Info("Tracing enabled.")
-		if _, err := initTracing(log, ctx); err != nil {
-			log.Warnf("Failed to initialise tracing, continuing without it: %v", err)
-		}
+	// --- Telemetry: traces, metrics and logs pushed over OTLP/gRPC (Alloy → Tempo/Mimir/Loki) ---
+	shutdownTelemetry, err := initTelemetry(ctx, "frontend", log)
+	if err != nil {
+		log.Warnf("telemetry disabled, continuing without it: %v", err)
 	} else {
-		log.Info("Tracing disabled.")
+		log.Info("telemetry enabled (OTLP/gRPC)")
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = shutdownTelemetry(shutdownCtx)
+		}()
 	}
 
 	if os.Getenv("ENABLE_PROFILING") == "1" {
