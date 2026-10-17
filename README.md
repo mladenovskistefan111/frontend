@@ -8,7 +8,7 @@ Part of the [platform-demo](https://github.com/mladenovskistefan111) platform �
 
 | | |
 |---|---|
-| **Language / runtime** | Go 1.25 (`gorilla/mux`, `html/template`), static binary |
+| **Language / runtime** | Go 1.26 (`gorilla/mux`, `html/template`), static binary |
 | **Image** | `mladenovskistefan/frontend` |
 | **Protocol / port** | HTTP/1.1 on `8080` |
 | **Metrics** | Pushed over OTLP/gRPC (Prometheus registry bridged into OpenTelemetry); `/metrics` on `9464` is still served for debugging |
@@ -100,8 +100,8 @@ Multi-stage [`Dockerfile`](Dockerfile):
 
 | Stage | Base | What happens |
 |---|---|---|
-| builder | `golang:1.25-alpine` | `go mod download`, `go build -ldflags="-s -w" -o /bin/frontend ./cmd/server` (`CGO_ENABLED=0`; target arch = builder's arch) |
-| runtime | `alpine:3.20` | binary + `templates/` + `static/` under `/app`; adds `ca-certificates` |
+| builder | `golang:1.26-alpine` | `go mod download`, `go build -ldflags="-s -w" -o /bin/frontend ./cmd/server` (`CGO_ENABLED=0`; target arch = builder's arch) |
+| runtime | `alpine:3.24` | binary + `templates/` + `static/` under `/app`; adds `ca-certificates` |
 
 - **Entrypoint:** `./frontend` (working dir `/app` — templates and static files are loaded by relative path, so don't change the working dir).
 - **User:** `appuser` — UID `100`, GID `101` (verified). Set `runAsUser: 100` for `runAsNonRoot`.
@@ -220,15 +220,18 @@ Browsing to `http://localhost:8080` works with the `Secure` cookies because brow
 │   ├── handlers.go      # page handlers (home, product, cart, checkout, currency, logout, product-meta)
 │   ├── rpc.go           # gRPC client helpers for each backend
 │   ├── middleware.go    # request logging + session-id cookie
-│   └── telemetry.go     # Prometheus HTTP metrics, OTel tracing, Pyroscope
-├── internal/validator/  # form payload validation (go-playground/validator)
-├── money/               # Money arithmetic helpers
+│   ├── otlp.go          # OTLP/gRPC setup: trace, metric (Prometheus bridge) and log (logrus hook) providers
+│   ├── telemetry.go     # Prometheus HTTP metrics, /metrics server, route wrapping, Pyroscope
+│   └── *_test.go        # unit tests for handlers, middleware, rpc helpers and telemetry
+├── internal/validator/  # form payload validation (go-playground/validator) + tests
+├── money/               # Money arithmetic helpers + tests
 ├── genproto/            # generated gRPC stubs for all backend services (demo.pb.go, demo_grpc.pb.go)
 ├── templates/           # home, product, cart, order, error, header/footer, ad, recommendations, assistant
 ├── static/              # styles, icons, images, product photos
+├── tests/e2e/           # HTTP end-to-end tests (not run by CI; the kind-based job was removed)
+├── .github/workflows/   # ci-feature.yaml, ci-main.yaml (manual dispatch)
 ├── Dockerfile
-├── go.mod / go.sum / .golangci.yaml
-└── tests/ ci/ .github/  # (not covered here)
+└── go.mod / go.sum / .golangci.yaml
 ```
 
 ## Known limitations
