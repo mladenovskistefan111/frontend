@@ -6,6 +6,7 @@ metadata:
   description: "The HTTP web storefront for the platform-demo e-commerce platform."
   annotations:
     github.com/project-slug: platform-boutique/app-frontend
+    backstage.io/source-location: url:https://github.com/platform-boutique/app-frontend/tree/main/
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-id: frontend
     backstage.io/kubernetes-namespace: platform-demo
@@ -16,7 +17,6 @@ metadata:
     grafana/overview-dashboard: "https://grafana.platform-demo.test/d/frontend-overview"
   tags: [go, http]
   links:
-    - { url: "https://github.com/platform-boutique/app-frontend", title: Repository, icon: github }
     - { url: "https://argocd.platform-demo.test/applications/argocd/dev-frontend", title: Argo CD, icon: dashboard }
     - { url: "https://grafana.platform-demo.test/d/frontend-overview", title: Grafana dashboard, icon: dashboard }
 spec:
