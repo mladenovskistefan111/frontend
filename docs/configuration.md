@@ -1,0 +1,36 @@
+# Configuration
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PRODUCT_CATALOG_SERVICE_ADDR` | **Yes** | — | `host:port` of product-catalog (gRPC), e.g. `product-catalog-service:3550` |
+| `CURRENCY_SERVICE_ADDR` | **Yes** | — | e.g. `currency-service:7000` |
+| `CART_SERVICE_ADDR` | **Yes** | — | e.g. `cart-service:7070` |
+| `RECOMMENDATION_SERVICE_ADDR` | **Yes** | — | e.g. `recommendation-service:8080` |
+| `CHECKOUT_SERVICE_ADDR` | **Yes** | — | e.g. `checkout-service:5050` |
+| `SHIPPING_SERVICE_ADDR` | **Yes** | — | e.g. `shipping-service:50051` |
+| `AD_SERVICE_ADDR` | **Yes** | — | e.g. `ad-service:9555` |
+| `PORT` | No | `8080` | HTTP listen port |
+| `LISTEN_ADDR` | No | `` (all interfaces) | Bind address; leave empty in containers |
+| `METRICS_PORT` | No | `9464` | Prometheus listener port |
+| `BASE_URL` | No | `` | URL path prefix when served under a sub-path (e.g. `/shop`); all routes and static URLs move under it |
+| `FRONTEND_MESSAGE` | No | — | Banner text shown on pages |
+| `BANNER_COLOR` | No | — | Banner colour passed to the home template |
+| `CYMBAL_BRANDING` | No | `false` | `true` switches to the Cymbal Shops branding |
+| `ENABLE_SINGLE_SHARED_SESSION` | No | `false` | `true` makes every new visitor share one hard-coded session id (cart shared by everyone). Demo/test workaround only |
+| `TEMPLATE_PATH` | No | `templates/*.html` | Glob of HTML templates (relative to `/app`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset (telemetry off) | OTLP/**gRPC** endpoint for **traces, metrics and logs** (scheme required), e.g. `http://alloy.monitoring.svc.cluster.local:4317`. Legacy fallback: `COLLECTOR_SERVICE_ADDR` (`host:port`). Telemetry is on iff an endpoint is set |
+| `ENABLE_TRACING` | No | — | Legacy switch: `0` forces all telemetry off even if an endpoint is set (it is no longer needed to turn telemetry on) |
+| `OTEL_METRIC_EXPORT_INTERVAL` | No | `15000` | Milliseconds between metric pushes (Go also accepts durations such as `15s`) |
+| `OTEL_SERVICE_NAME` | No | `frontend` | `service.name` — becomes the Prometheus `job` and the Loki `service_name`; keep the default, dashboards depend on it |
+| `PYROSCOPE_ADDR` | No | `http://pyroscope:4040` | Profiles use the Pyroscope SDK push protocol (**not** OTLP). Point it at Alloy (`http://alloy.monitoring.svc.cluster.local:4040`), which forwards to Pyroscope, or directly at Pyroscope |
+| `ENABLE_PROFILING` | No | off | `1` starts the Pyroscope SDK |
+
+Notes:
+
+- All seven `*_ADDR` variables are **mandatory**: a missing one makes the process `panic` at startup. They are plain `host:port` (no scheme). Use FQDNs (`svc.<namespace>.svc.cluster.local:<port>`) if services live in other namespaces.
+- gRPC connections use `grpc.NewClient` (lazy): the pod starts and `/_healthz` returns `ok` even if every backend is down. Page loads then fail with HTTP 500 until backends return.
+- The earlier README listed `ENV_PLATFORM`; it is **not read by the code**.
+- Log level is hard-coded to `debug` (JSON via `logrus`) — expect chatty logs; there is no env switch.
+- Telemetry is **pushed**, not scraped: traces, metrics and logs share one OTLP/gRPC endpoint (Alloy); profiles go to Pyroscope (via Alloy). `service.instance.id` is the pod hostname, so replicas stay distinct in Mimir.
+- A Prometheus `/metrics` endpoint is still served on `METRICS_PORT` for debugging, but nothing has to scrape it — the same registry is bridged into OTLP, so metric names are unchanged.
+- Logs: the `logrus` logger keeps writing JSON to stdout and additionally mirrors every record over OTLP (with trace ids when a context is attached).
