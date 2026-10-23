@@ -14,11 +14,11 @@ metadata:
     argocd/app-name: dev-frontend
     grafana/dashboard-selector: "tags @> 'frontend'"
     grafana/alert-label-selector: "service=frontend"
-    grafana/overview-dashboard: "https://grafana.platform-demo.test/d/frontend-overview"
+    grafana/overview-dashboard: "https://grafana.platform-demo.click/d/frontend-overview"
   tags: [go, http]
   links:
-    - { url: "https://argocd.platform-demo.test/applications/argocd/dev-frontend", title: Argo CD, icon: dashboard }
-    - { url: "https://grafana.platform-demo.test/d/frontend-overview", title: Grafana dashboard, icon: dashboard }
+    - { url: "https://argocd.platform-demo.click/applications/argocd/dev-frontend", title: Argo CD, icon: dashboard }
+    - { url: "https://grafana.platform-demo.click/d/frontend-overview", title: Grafana dashboard, icon: dashboard }
 spec:
   type: website
   lifecycle: experimental
